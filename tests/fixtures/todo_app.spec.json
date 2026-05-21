@@ -1,0 +1,64 @@
+{
+  "app": {
+    "name": "Todo App",
+    "summary": "A simple todo list application.",
+    "version": "0.1.0"
+  },
+  "stack": {
+    "frontend": "react-vite-ts",
+    "backend": "fastapi",
+    "db": "sqlite"
+  },
+  "entities": [
+    {
+      "name": "User",
+      "fields": [
+        { "name": "email", "type": "string", "required": true, "unique": true },
+        { "name": "password", "type": "string", "required": true }
+      ]
+    },
+    {
+      "name": "Todo",
+      "fields": [
+        { "name": "title", "type": "string", "required": true },
+        { "name": "description", "type": "string", "required": false },
+        { "name": "completed", "type": "boolean", "required": true },
+        { "name": "user_id", "type": "integer", "required": true }
+      ]
+    }
+  ],
+  "auth": { "type": "jwt" },
+  "endpoints": [
+    { "method": "POST", "path": "/signup", "auth": false, "summary": "Create a user" },
+    { "method": "POST", "path": "/login", "auth": false, "summary": "Authenticate, returns a JWT" },
+    { "method": "GET", "path": "/todos", "auth": true, "summary": "List todos for the current user" },
+    { "method": "POST", "path": "/todos", "auth": true, "summary": "Create a todo" },
+    { "method": "PATCH", "path": "/todos/{id}", "auth": true, "summary": "Update a todo" },
+    { "method": "DELETE", "path": "/todos/{id}", "auth": true, "summary": "Delete a todo" }
+  ],
+  "screens": [
+    {
+      "name": "Login",
+      "route": "/login",
+      "auth": false,
+      "components": ["EmailInput", "PasswordInput", "SubmitButton"],
+      "actions": ["submitLogin"]
+    },
+    {
+      "name": "Signup",
+      "route": "/signup",
+      "auth": false,
+      "components": ["EmailInput", "PasswordInput", "SubmitButton"],
+      "actions": ["submitSignup"]
+    },
+    {
+      "name": "Todos",
+      "route": "/",
+      "auth": true,
+      "components": ["TodoList", "TodoInput"],
+      "actions": ["addTodo", "toggleTodo", "deleteTodo"]
+    }
+  ],
+  "integrations": [],
+  "non_functional": { "tests": "smoke" }
+}
