@@ -1,0 +1,12 @@
+:root {
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  color: #111;
+}
+
+body {
+  margin: 0;
+  padding: 2rem;
+  max-width: 64rem;
+  margin-inline: auto;
+}

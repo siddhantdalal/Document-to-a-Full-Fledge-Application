@@ -1,9 +1,13 @@
-# react-fastapi template
+# {{APP_NAME}}
 
-The default scaffolded shell for generated applications: Vite + React + TS on
-the frontend, FastAPI + SQLModel on the backend, SQLite for dev.
+{{APP_SUMMARY}}
 
-Built by hand so that codegen only fills in spec-derived files (models,
-routers, services, pages, components, API client).
+## Run
 
-Status: not yet built.
+```
+docker compose up
+```
+
+Frontend: http://localhost:5173 · Backend: http://localhost:8000
+
+This project was generated from a requirements document.
