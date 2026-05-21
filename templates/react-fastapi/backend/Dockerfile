@@ -12,7 +12,7 @@ RUN pip install \
     "sqlmodel>=0.0.22" \
     "pydantic>=2.8" \
     "pydantic-settings>=2.5" \
-    "passlib[bcrypt]>=1.7" \
+    "bcrypt>=4.0" \
     "python-jose[cryptography]>=3.3" \
     "python-multipart>=0.0.9"
 

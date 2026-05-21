@@ -11,6 +11,7 @@ from packages.generator.template import (
     package_zip,
     slugify,
 )
+from packages.generator.test_gen import write_backend_tests
 
 
 def generate(
@@ -32,6 +33,7 @@ def generate(
     copy_template(template_root / "react-fastapi", output_dir, replacements)
     write_backend(spec, output_dir)
     write_frontend(spec, output_dir)
+    write_backend_tests(spec, output_dir)
     (output_dir / "spec.json").write_text(json.dumps(spec, indent=2))
     return output_dir
 
