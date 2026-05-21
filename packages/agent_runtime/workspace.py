@@ -119,5 +119,28 @@ class Workspace:
     def commits_touching(self, path: str) -> list[WorkspaceCommit]:
         return [c for c in self._commits if path in c.paths]
 
+    def snapshot(
+        self,
+        *,
+        agent_name: str,
+        agent_role: str,
+        message: str,
+        glob: str = "**/*",
+    ) -> WorkspaceCommit:
+        """Record a single commit listing every existing file matching glob.
+        Useful when files were created outside Workspace.write (e.g. by a
+        subprocess or a code generator that writes the filesystem directly)."""
+        paths = tuple(self.list_files(glob))
+        commit = WorkspaceCommit(
+            id=uuid.uuid4().hex,
+            agent_name=agent_name,
+            agent_role=agent_role,
+            paths=paths,
+            message=message,
+            created_at=now_iso(),
+        )
+        self._commits.append(commit)
+        return commit
+
 
 __all__ = ["DEFAULT_OWNERSHIP", "OwnershipPolicy", "Workspace", "WorkspaceCommit"]
