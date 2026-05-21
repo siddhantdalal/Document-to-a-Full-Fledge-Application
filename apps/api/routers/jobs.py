@@ -1,4 +1,5 @@
 import tempfile
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -18,11 +19,13 @@ from fastapi.responses import FileResponse
 from packages.ai_providers.anthropic_client import AnthropicClient
 from packages.generator import generate, package_zip
 from packages.generator.template import slugify
+from packages.reconciler import reconcile
 from packages.spec_extractor import extract_spec
+from packages.validator import validate
 
 router = APIRouter(prefix="/jobs")
 
-STAGE_NAMES = ("extract_spec", "generate", "package")
+STAGE_NAMES = ("extract_spec", "generate", "validate", "reconcile", "package")
 
 _jobs: dict[str, dict[str, Any]] = {}
 _ARTIFACT_ROOT = Path(tempfile.gettempdir()) / "doc-to-app-artifacts"
@@ -47,6 +50,8 @@ def _new_job(job_id: str) -> dict[str, Any]:
             for name in STAGE_NAMES
         ],
         "spec": None,
+        "validation": None,
+        "reconciliation": None,
         "error": None,
         "artifact_ready": False,
         "artifact_path": None,
@@ -107,6 +112,35 @@ def _run_pipeline(job_id: str, markdown: str, key: str, model: str) -> None:
         project = generate(spec, work_dir / "project")
         file_count = sum(1 for _ in project.rglob("*") if _.is_file())
         _finish_stage(job, "generate", f"{file_count} files written")
+
+        _start_stage(job, "validate")
+        v = validate(project)
+        job["validation"] = asdict(v)
+        if not v.ok:
+            _fail_stage(job, "validate", f"{len(v.errors)} compile error(s)")
+            job["error"] = "\n".join(v.errors[:5])
+            job["status"] = "failed"
+            job["updated_at"] = _now()
+            return
+        _finish_stage(
+            job,
+            "validate",
+            f"{v.summary.get('python_files', 0)} Python files compiled cleanly",
+        )
+
+        _start_stage(job, "reconcile")
+        r = reconcile(spec, project)
+        job["reconciliation"] = asdict(r)
+        total = sum(c["total"] for c in r.coverage.values())
+        covered = sum(c["covered"] for c in r.coverage.values())
+        if r.missing:
+            _fail_stage(job, "reconcile", f"{len(r.missing)} spec item(s) not implemented")
+            job["error"] = "Spec coverage gaps:\n" + "\n".join(r.missing[:5])
+            job["status"] = "failed"
+            job["updated_at"] = _now()
+            return
+        extras = f" ({len(r.extra)} extra)" if r.extra else ""
+        _finish_stage(job, "reconcile", f"{covered}/{total} spec items covered{extras}")
 
         _start_stage(job, "package")
         zip_path = package_zip(project, work_dir / f"{job_id}.zip")

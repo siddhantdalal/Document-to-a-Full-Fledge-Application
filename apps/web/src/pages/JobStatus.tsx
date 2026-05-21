@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
+import { CoverageCard } from "../components/CoverageCard";
 import { SpecPanel } from "../components/SpecPanel";
 import { StageTimeline } from "../components/StageTimeline";
 import { artifactUrl, getJob } from "../lib/job";
@@ -89,6 +90,12 @@ export function JobStatus() {
             >
               <DownloadIcon /> Download project ZIP
             </a>
+          )}
+
+          {job.reconciliation && (
+            <div className="mt-4">
+              <CoverageCard reconciliation={job.reconciliation} />
+            </div>
           )}
 
           {job.error && (

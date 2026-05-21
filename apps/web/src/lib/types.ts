@@ -48,11 +48,31 @@ export interface Spec {
   non_functional?: { i18n?: boolean; analytics?: boolean; tests?: string };
 }
 
+export interface Validation {
+  ok: boolean;
+  errors: string[];
+  summary: Record<string, number>;
+}
+
+export interface CoverageBucket {
+  covered: number;
+  total: number;
+}
+
+export interface Reconciliation {
+  ok: boolean;
+  missing: string[];
+  extra: string[];
+  coverage: Record<string, CoverageBucket>;
+}
+
 export interface Job {
   id: string;
   status: JobStatus;
   stages: Stage[];
   spec: Spec | null;
+  validation: Validation | null;
+  reconciliation: Reconciliation | null;
   error: string | null;
   artifact_ready: boolean;
   created_at: string;

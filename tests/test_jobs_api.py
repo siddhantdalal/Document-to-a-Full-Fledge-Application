@@ -50,7 +50,15 @@ def test_post_jobs_returns_pending_with_initial_stages(client: TestClient) -> No
     assert res.status_code == 200
     body = res.json()
     assert body["id"]
-    assert {s["name"] for s in body["stages"]} == {"extract_spec", "generate", "package"}
+    assert [s["name"] for s in body["stages"]] == [
+        "extract_spec",
+        "generate",
+        "validate",
+        "reconcile",
+        "package",
+    ]
+    assert body["validation"] is None
+    assert body["reconciliation"] is None
 
 
 def test_pipeline_runs_all_stages_and_serves_zip(client: TestClient) -> None:
@@ -64,7 +72,7 @@ def test_pipeline_runs_all_stages_and_serves_zip(client: TestClient) -> None:
     job_id = res.json()["id"]
     final = _wait_done(client, job_id)
 
-    assert final["status"] == "succeeded"
+    assert final["status"] == "succeeded", final.get("error")
     assert final["artifact_ready"] is True
     assert final["spec"]["app"]["name"] == "Todo App"
     assert all(s["status"] == "succeeded" for s in final["stages"])
@@ -72,6 +80,14 @@ def test_pipeline_runs_all_stages_and_serves_zip(client: TestClient) -> None:
         assert stage["started_at"] is not None
         assert stage["finished_at"] is not None
         assert stage["message"]
+
+    assert final["validation"]["ok"] is True
+    assert final["validation"]["summary"]["python_files"] > 0
+    rec = final["reconciliation"]
+    assert rec["ok"] is True
+    assert rec["coverage"]["entities"]["covered"] == rec["coverage"]["entities"]["total"]
+    assert rec["coverage"]["endpoints"]["covered"] == 6
+    assert rec["coverage"]["screens"]["covered"] == 3
 
     artifact = client.get(f"/jobs/{job_id}/artifact")
     assert artifact.status_code == 200
