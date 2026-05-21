@@ -5,9 +5,10 @@ Bring your own AI provider API key.
 
 The Spec — a structured representation of the doc — is the contract: every
 generated file must trace back to a Spec node, and every Spec node must be
-implemented. See `PLAN.md` for the original phased plan; this file documents
-the current capabilities and the **scaling roadmap** for moving beyond the
-MVP ceilings.
+implemented. See `PLAN.md` for the original phased plan, `MULTI_AGENT.md`
+for the actor-model multi-agent team architecture (Phases 5-9), and this
+file for current capabilities + the **scaling roadmap** that closes the
+gap toward larger projects.
 
 ## Capabilities
 
