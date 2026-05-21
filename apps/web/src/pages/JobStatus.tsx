@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { CoverageCard } from "../components/CoverageCard";
 import { PreviewPanel } from "../components/PreviewPanel";
+import { PushPanel } from "../components/PushPanel";
 import { SpecPanel } from "../components/SpecPanel";
 import { StageTimeline } from "../components/StageTimeline";
 import { artifactUrl, getJob } from "../lib/job";
@@ -126,6 +127,12 @@ export function JobStatus() {
                 artifactReady={job.artifact_ready}
                 onChange={() => setPulse((p) => p + 1)}
               />
+            </div>
+          )}
+
+          {job.artifact_ready && (
+            <div className="mt-4">
+              <PushPanel jobId={job.id} artifactReady={job.artifact_ready} />
             </div>
           )}
 
