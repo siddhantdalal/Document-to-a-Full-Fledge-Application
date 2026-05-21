@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from packages.ai_providers.base import CompletionRequest, CompletionResponse, LLMClient
-from packages.spec_extractor import SpecExtractionError, extract_spec
+from packages.spec_extractor import SpecExtractionError, extract_spec, refine_spec
 from packages.spec_extractor.validation import parse_spec_response
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -86,3 +86,40 @@ def test_extract_spec_respects_token_budget():
         extract_spec("doc text", llm, max_tokens_budget=100)
     assert "budget" in str(exc.value).lower()
     assert "110" in str(exc.value)
+
+
+def test_refine_spec_returns_modified_spec_and_includes_request_context():
+    current = _todo_spec()
+    modified = json.loads(json.dumps(current))
+    modified["entities"][1]["fields"].append(
+        {"name": "priority", "type": "string", "required": False}
+    )
+    llm = FakeLLM([_fenced(modified)], usage=(50, 30))
+
+    result = refine_spec(current, "Add a priority field to Todo.", llm)
+
+    assert result.spec == modified
+    assert result.usage == {"input": 50, "output": 30, "total": 80}
+    user_msg = llm.requests[0].messages[0].content
+    assert "Add a priority field to Todo." in user_msg
+    assert '"name": "Todo"' in user_msg
+    assert "modify a structured Spec" in (llm.requests[0].system or "")
+
+
+def test_refine_spec_respects_token_budget():
+    current = _todo_spec()
+    llm = FakeLLM([_fenced(current)], usage=(60, 60))
+    with pytest.raises(SpecExtractionError):
+        refine_spec(current, "no-op", llm, max_tokens_budget=50)
+
+
+def test_refine_spec_retries_on_invalid_response():
+    current = _todo_spec()
+    modified = json.loads(json.dumps(current))
+    modified["entities"][1]["fields"].append(
+        {"name": "priority", "type": "string", "required": False}
+    )
+    llm = FakeLLM(["not json", _fenced(modified)], usage=(10, 5))
+    result = refine_spec(current, "Add priority field to Todo.", llm)
+    assert result.spec == modified
+    assert len(llm.requests) == 2

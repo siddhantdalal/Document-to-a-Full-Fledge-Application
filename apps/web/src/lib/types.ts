@@ -82,6 +82,28 @@ export interface PreviewState {
   error: string | null;
 }
 
+export type DiffOpType = "added" | "removed" | "modified";
+export type DiffOpKind = "entity" | "endpoint" | "screen" | "app" | "auth";
+
+export interface DiffOperation {
+  type: DiffOpType;
+  kind: DiffOpKind;
+  label: string;
+  before?: unknown;
+  after?: unknown;
+}
+
+export interface SpecDiff {
+  operations: DiffOperation[];
+  summary: { added: number; removed: number; modified: number };
+}
+
+export interface Refinement {
+  parent_job_id: string;
+  user_message: string;
+  diff: SpecDiff | null;
+}
+
 export interface Job {
   id: string;
   status: JobStatus;
@@ -92,6 +114,7 @@ export interface Job {
   usage: Usage;
   max_tokens: number | null;
   preview: PreviewState | null;
+  refinement: Refinement | null;
   error: string | null;
   artifact_ready: boolean;
   created_at: string;

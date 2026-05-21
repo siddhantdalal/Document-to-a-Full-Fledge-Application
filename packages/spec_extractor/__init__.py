@@ -5,7 +5,11 @@ from typing import Any
 import jsonschema
 
 from packages.ai_providers import CompletionRequest, LLMClient, Message
-from packages.spec_extractor.prompts import system_prompt
+from packages.spec_extractor.prompts import (
+    refinement_system_prompt,
+    refinement_user_message,
+    system_prompt,
+)
 from packages.spec_extractor.validation import parse_spec_response
 
 
@@ -19,17 +23,12 @@ class ExtractionResult:
     usage: dict[str, int] = field(default_factory=lambda: {"input": 0, "output": 0, "total": 0})
 
 
-def extract_spec(
-    markdown: str,
+def _run_with_retries(
+    request: CompletionRequest,
     llm: LLMClient,
-    retries: int = 2,
-    max_tokens_budget: int | None = None,
+    retries: int,
+    max_tokens_budget: int | None,
 ) -> ExtractionResult:
-    request = CompletionRequest(
-        system=system_prompt(),
-        messages=[Message(role="user", content=markdown)],
-        temperature=0.0,
-    )
     usage = {"input": 0, "output": 0, "total": 0}
     last_error: Exception | None = None
     for _ in range(retries + 1):
@@ -61,4 +60,35 @@ def extract_spec(
     )
 
 
-__all__ = ["ExtractionResult", "SpecExtractionError", "extract_spec"]
+def extract_spec(
+    markdown: str,
+    llm: LLMClient,
+    retries: int = 2,
+    max_tokens_budget: int | None = None,
+) -> ExtractionResult:
+    request = CompletionRequest(
+        system=system_prompt(),
+        messages=[Message(role="user", content=markdown)],
+        temperature=0.0,
+    )
+    return _run_with_retries(request, llm, retries, max_tokens_budget)
+
+
+def refine_spec(
+    current_spec: dict[str, Any],
+    change_request: str,
+    llm: LLMClient,
+    retries: int = 2,
+    max_tokens_budget: int | None = None,
+) -> ExtractionResult:
+    request = CompletionRequest(
+        system=refinement_system_prompt(),
+        messages=[
+            Message(role="user", content=refinement_user_message(current_spec, change_request)),
+        ],
+        temperature=0.0,
+    )
+    return _run_with_retries(request, llm, retries, max_tokens_budget)
+
+
+__all__ = ["ExtractionResult", "SpecExtractionError", "extract_spec", "refine_spec"]

@@ -15,6 +15,7 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from packages.ai_providers.anthropic_client import AnthropicClient
 from packages.ai_providers.base import LLMClient
@@ -24,7 +25,8 @@ from packages.doc_parser import DocParseError, parse as parse_doc
 from packages.generator import generate, package_zip
 from packages.generator.template import slugify
 from packages.reconciler import reconcile
-from packages.spec_extractor import extract_spec
+from packages.refiner import diff_spec
+from packages.spec_extractor import extract_spec, refine_spec
 from packages.validator import validate
 
 SUPPORTED_PROVIDERS = ("anthropic", "openai", "gemini")
@@ -42,6 +44,7 @@ def _make_client(provider: str, key: str, model: str) -> LLMClient:
 router = APIRouter(prefix="/jobs")
 
 STAGE_NAMES = ("extract_spec", "generate", "validate", "reconcile", "package")
+REFINE_STAGE_NAMES = ("refine_spec", "generate", "validate", "reconcile", "package")
 
 _jobs: dict[str, dict[str, Any]] = {}
 _ARTIFACT_ROOT = Path(tempfile.gettempdir()) / "doc-to-app-artifacts"
@@ -51,7 +54,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _new_job(job_id: str, max_tokens: int | None = None) -> dict[str, Any]:
+def _new_job(
+    job_id: str,
+    max_tokens: int | None = None,
+    stages: tuple[str, ...] = STAGE_NAMES,
+    refinement: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return {
         "id": job_id,
         "status": "pending",
@@ -63,7 +71,7 @@ def _new_job(job_id: str, max_tokens: int | None = None) -> dict[str, Any]:
                 "finished_at": None,
                 "message": None,
             }
-            for name in STAGE_NAMES
+            for name in stages
         ],
         "spec": None,
         "validation": None,
@@ -71,6 +79,7 @@ def _new_job(job_id: str, max_tokens: int | None = None) -> dict[str, Any]:
         "usage": {"input": 0, "output": 0, "total": 0},
         "max_tokens": max_tokens,
         "preview": None,
+        "refinement": refinement,
         "error": None,
         "artifact_ready": False,
         "artifact_path": None,
@@ -111,6 +120,51 @@ def _fail_stage(job: dict[str, Any], name: str, message: str) -> None:
     job["updated_at"] = _now()
 
 
+def _run_generation_tail(job: dict[str, Any], spec: dict[str, Any]) -> bool:
+    job_id = job["id"]
+    work_dir = _ARTIFACT_ROOT / job_id
+
+    _start_stage(job, "generate")
+    project = generate(spec, work_dir / "project")
+    file_count = sum(1 for _ in project.rglob("*") if _.is_file())
+    _finish_stage(job, "generate", f"{file_count} files written")
+
+    _start_stage(job, "validate")
+    v = validate(project)
+    job["validation"] = asdict(v)
+    if not v.ok:
+        _fail_stage(job, "validate", f"{len(v.errors)} compile error(s)")
+        job["error"] = "\n".join(v.errors[:5])
+        job["status"] = "failed"
+        return False
+    _finish_stage(
+        job,
+        "validate",
+        f"{v.summary.get('python_files', 0)} Python files compiled cleanly",
+    )
+
+    _start_stage(job, "reconcile")
+    r = reconcile(spec, project)
+    job["reconciliation"] = asdict(r)
+    total = sum(c["total"] for c in r.coverage.values())
+    covered = sum(c["covered"] for c in r.coverage.values())
+    if r.missing:
+        _fail_stage(job, "reconcile", f"{len(r.missing)} spec item(s) not implemented")
+        job["error"] = "Spec coverage gaps:\n" + "\n".join(r.missing[:5])
+        job["status"] = "failed"
+        return False
+    extras = f" ({len(r.extra)} extra)" if r.extra else ""
+    _finish_stage(job, "reconcile", f"{covered}/{total} spec items covered{extras}")
+
+    _start_stage(job, "package")
+    zip_path = package_zip(project, work_dir / f"{job_id}.zip")
+    job["artifact_path"] = str(zip_path)
+    job["artifact_ready"] = True
+    size_kb = max(1, zip_path.stat().st_size // 1024)
+    _finish_stage(job, "package", f"{size_kb} KB archive")
+    return True
+
+
 def _run_pipeline(job_id: str, markdown: str, provider: str, key: str, model: str) -> None:
     job = _jobs[job_id]
     job["status"] = "running"
@@ -132,49 +186,52 @@ def _run_pipeline(job_id: str, markdown: str, provider: str, key: str, model: st
                 f"{extraction.usage['total']} tokens"
             ),
         )
-
-        _start_stage(job, "generate")
-        work_dir = _ARTIFACT_ROOT / job_id
-        project = generate(spec, work_dir / "project")
-        file_count = sum(1 for _ in project.rglob("*") if _.is_file())
-        _finish_stage(job, "generate", f"{file_count} files written")
-
-        _start_stage(job, "validate")
-        v = validate(project)
-        job["validation"] = asdict(v)
-        if not v.ok:
-            _fail_stage(job, "validate", f"{len(v.errors)} compile error(s)")
-            job["error"] = "\n".join(v.errors[:5])
-            job["status"] = "failed"
+        if not _run_generation_tail(job, spec):
             job["updated_at"] = _now()
             return
+        job["status"] = "succeeded"
+    except Exception as exc:
+        running = next((s for s in job["stages"] if s["status"] == "running"), None)
+        if running:
+            _fail_stage(job, running["name"], str(exc))
+        job["error"] = str(exc)
+        job["status"] = "failed"
+    job["updated_at"] = _now()
+
+
+def _run_refinement(
+    child_id: str,
+    parent_spec: dict[str, Any],
+    change_request: str,
+    provider: str,
+    key: str,
+    model: str,
+) -> None:
+    job = _jobs[child_id]
+    job["status"] = "running"
+    job["updated_at"] = _now()
+    try:
+        _start_stage(job, "refine_spec")
+        llm = _make_client(provider, key, model)
+        result = refine_spec(parent_spec, change_request, llm, max_tokens_budget=job["max_tokens"])
+        new_spec = result.spec
+        job["spec"] = new_spec
+        job["usage"] = result.usage
+        diff = diff_spec(parent_spec, new_spec)
+        job["refinement"]["diff"] = diff.to_dict()
         _finish_stage(
             job,
-            "validate",
-            f"{v.summary.get('python_files', 0)} Python files compiled cleanly",
+            "refine_spec",
+            (
+                f"{diff.summary['added']} added · "
+                f"{diff.summary['removed']} removed · "
+                f"{diff.summary['modified']} modified · "
+                f"{result.usage['total']} tokens"
+            ),
         )
-
-        _start_stage(job, "reconcile")
-        r = reconcile(spec, project)
-        job["reconciliation"] = asdict(r)
-        total = sum(c["total"] for c in r.coverage.values())
-        covered = sum(c["covered"] for c in r.coverage.values())
-        if r.missing:
-            _fail_stage(job, "reconcile", f"{len(r.missing)} spec item(s) not implemented")
-            job["error"] = "Spec coverage gaps:\n" + "\n".join(r.missing[:5])
-            job["status"] = "failed"
+        if not _run_generation_tail(job, new_spec):
             job["updated_at"] = _now()
             return
-        extras = f" ({len(r.extra)} extra)" if r.extra else ""
-        _finish_stage(job, "reconcile", f"{covered}/{total} spec items covered{extras}")
-
-        _start_stage(job, "package")
-        zip_path = package_zip(project, work_dir / f"{job_id}.zip")
-        job["artifact_path"] = str(zip_path)
-        job["artifact_ready"] = True
-        size_kb = max(1, zip_path.stat().st_size // 1024)
-        _finish_stage(job, "package", f"{size_kb} KB archive")
-
         job["status"] = "succeeded"
     except Exception as exc:
         running = next((s for s in job["stages"] if s["status"] == "running"), None)
@@ -220,6 +277,56 @@ def get_job(job_id: str) -> dict[str, Any]:
     if job_id not in _jobs:
         raise HTTPException(status_code=404, detail="Job not found.")
     return _public(_jobs[job_id])
+
+
+class RefineRequest(BaseModel):
+    user_message: str = Field(..., min_length=1, max_length=4000)
+    provider: str
+    model: str
+    max_tokens: int | None = None
+
+
+@router.post("/{job_id}/refine")
+async def refine_endpoint(
+    job_id: str,
+    background: BackgroundTasks,
+    request: RefineRequest,
+    x_provider_key: str = Header(..., alias="X-Provider-Key"),
+) -> dict[str, Any]:
+    parent = _jobs.get(job_id)
+    if not parent:
+        raise HTTPException(status_code=404, detail="Parent job not found.")
+    if not parent.get("spec"):
+        raise HTTPException(status_code=409, detail="Parent job has no spec yet.")
+    if request.provider not in SUPPORTED_PROVIDERS:
+        raise HTTPException(
+            status_code=400, detail=f"Unsupported provider: {request.provider}"
+        )
+    if request.max_tokens is not None and request.max_tokens <= 0:
+        raise HTTPException(status_code=400, detail="max_tokens must be positive.")
+
+    child_id = uuid4().hex
+    refinement = {
+        "parent_job_id": job_id,
+        "user_message": request.user_message,
+        "diff": None,
+    }
+    _jobs[child_id] = _new_job(
+        child_id,
+        max_tokens=request.max_tokens,
+        stages=REFINE_STAGE_NAMES,
+        refinement=refinement,
+    )
+    background.add_task(
+        _run_refinement,
+        child_id,
+        parent["spec"],
+        request.user_message,
+        request.provider,
+        x_provider_key,
+        request.model,
+    )
+    return _public(_jobs[child_id])
 
 
 @router.get("/{job_id}/artifact")

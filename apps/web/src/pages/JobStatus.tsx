@@ -4,6 +4,8 @@ import { Link, useParams } from "react-router-dom";
 import { CoverageCard } from "../components/CoverageCard";
 import { PreviewPanel } from "../components/PreviewPanel";
 import { PushPanel } from "../components/PushPanel";
+import { RefinePanel } from "../components/RefinePanel";
+import { RefinementSummary } from "../components/RefinementSummary";
 import { SpecPanel } from "../components/SpecPanel";
 import { StageTimeline } from "../components/StageTimeline";
 import { artifactUrl, getJob } from "../lib/job";
@@ -136,6 +138,12 @@ export function JobStatus() {
             </div>
           )}
 
+          {job.spec && (
+            <div className="mt-4">
+              <RefinePanel jobId={job.id} hasSpec={!!job.spec} />
+            </div>
+          )}
+
           {job.error && (
             <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
               <p className="font-medium">Pipeline failed</p>
@@ -144,22 +152,26 @@ export function JobStatus() {
           )}
         </aside>
 
-        <section className="lg:col-span-3">
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Spec preview
-          </h2>
-          {job.spec ? (
-            <SpecPanel spec={job.spec} />
-          ) : (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-10 text-center">
-              <p className="text-sm font-medium text-slate-600">
-                Extracting structured spec from your document…
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                Once extracted, every entity, endpoint, and screen will appear here.
-              </p>
-            </div>
-          )}
+        <section className="lg:col-span-3 space-y-4">
+          {job.refinement && <RefinementSummary refinement={job.refinement} />}
+
+          <div>
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Spec preview
+            </h2>
+            {job.spec ? (
+              <SpecPanel spec={job.spec} />
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-10 text-center">
+                <p className="text-sm font-medium text-slate-600">
+                  {job.refinement ? "Applying the refinement…" : "Extracting structured spec from your document…"}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Once it's ready, every entity, endpoint, and screen will appear here.
+                </p>
+              </div>
+            )}
+          </div>
         </section>
       </div>
     </div>
