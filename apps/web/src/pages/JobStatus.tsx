@@ -66,7 +66,7 @@ export function JobStatus() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:py-14">
+    <div className="mx-auto max-w-5xl px-4 py-8 sm:py-12 animate-fade-in">
       <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-baseline sm:justify-between">
         <div>
           <BackLink />
@@ -116,13 +116,13 @@ export function JobStatus() {
           )}
 
           {job.reconciliation && (
-            <div className="mt-4">
+            <div className="mt-4 animate-rise-in">
               <CoverageCard reconciliation={job.reconciliation} />
             </div>
           )}
 
           {job.artifact_ready && (
-            <div className="mt-4">
+            <div className="mt-4 animate-rise-in">
               <PreviewPanel
                 jobId={job.id}
                 preview={job.preview}
@@ -133,13 +133,13 @@ export function JobStatus() {
           )}
 
           {job.artifact_ready && (
-            <div className="mt-4">
+            <div className="mt-4 animate-rise-in">
               <PushPanel jobId={job.id} artifactReady={job.artifact_ready} />
             </div>
           )}
 
           {job.spec && (
-            <div className="mt-4">
+            <div className="mt-4 animate-rise-in">
               <RefinePanel jobId={job.id} hasSpec={!!job.spec} />
             </div>
           )}

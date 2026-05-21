@@ -1,5 +1,7 @@
 import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
 
+import { formatBytes } from "../lib/format";
+
 interface Props {
   value: File | null;
   onChange: (file: File | null) => void;
@@ -47,9 +49,9 @@ export function FileDrop({ value, onChange, accept = ".md,.markdown,.txt" }: Pro
         className="hidden"
       />
       {value ? (
-        <div>
+        <div className="animate-fade-in">
           <p className="font-medium text-slate-900">{value.name}</p>
-          <p className="text-sm text-slate-500">{(value.size / 1024).toFixed(1)} KB</p>
+          <p className="text-sm text-slate-500">{formatBytes(value.size)}</p>
           <button
             type="button"
             onClick={(e) => {

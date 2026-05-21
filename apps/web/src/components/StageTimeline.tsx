@@ -1,8 +1,13 @@
+import { useElapsedMs } from "../lib/hooks";
+import { formatDurationMs } from "../lib/format";
 import type { Stage } from "../lib/types";
 
 const LABELS: Record<string, string> = {
-  extract_spec: "Extract Spec",
-  generate: "Generate Files",
+  extract_spec: "Extract spec",
+  refine_spec: "Refine spec",
+  generate: "Generate files",
+  validate: "Validate",
+  reconcile: "Reconcile",
   package: "Package ZIP",
 };
 
@@ -11,7 +16,7 @@ export function StageTimeline({ stages }: { stages: Stage[] }) {
     <ol className="relative space-y-5">
       <div className="absolute left-[14px] top-3 bottom-3 w-px bg-slate-200" aria-hidden />
       {stages.map((s) => (
-        <li key={s.name} className="relative flex gap-4">
+        <li key={s.name} className="relative flex gap-4 animate-fade-in">
           <span
             className={[
               "z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 transition-all duration-300",
@@ -30,17 +35,29 @@ export function StageTimeline({ stages }: { stages: Stage[] }) {
               {LABELS[s.name] ?? s.name}
             </p>
             {s.message && (
-              <p className="mt-0.5 text-sm text-slate-500">{s.message}</p>
+              <p className="mt-0.5 text-sm text-slate-500 animate-rise-in">{s.message}</p>
             )}
-            {s.started_at && s.finished_at && (
-              <p className="mt-0.5 text-xs text-slate-400">
-                {duration(s.started_at, s.finished_at)}
+            {s.status === "running" && s.started_at && (
+              <LiveElapsed startedAt={s.started_at} />
+            )}
+            {s.status === "succeeded" && s.started_at && s.finished_at && (
+              <p className="mt-0.5 font-mono text-xs text-slate-400">
+                {formatDurationMs(new Date(s.finished_at).getTime() - new Date(s.started_at).getTime())}
               </p>
             )}
           </div>
         </li>
       ))}
     </ol>
+  );
+}
+
+function LiveElapsed({ startedAt }: { startedAt: string }) {
+  const elapsed = useElapsedMs(startedAt);
+  return (
+    <p className="mt-0.5 font-mono text-xs text-indigo-600">
+      {formatDurationMs(elapsed)}…
+    </p>
   );
 }
 
@@ -91,10 +108,4 @@ function StageIcon({ status }: { status: Stage["status"] }) {
     );
   }
   return <span className="h-1.5 w-1.5 rounded-full bg-current" />;
-}
-
-function duration(start: string, end: string): string {
-  const ms = new Date(end).getTime() - new Date(start).getTime();
-  if (ms < 1000) return `${ms} ms`;
-  return `${(ms / 1000).toFixed(1)} s`;
 }

@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import type { DiffOpType, Refinement } from "../lib/types";
+import { getJob } from "../lib/job";
+import type { DiffOpType, Job, Refinement } from "../lib/types";
 
 const TYPE_STYLES: Record<DiffOpType, string> = {
   added: "bg-emerald-100 text-emerald-700",
@@ -8,19 +10,35 @@ const TYPE_STYLES: Record<DiffOpType, string> = {
   modified: "bg-amber-100 text-amber-700",
 };
 
+interface LineageNode {
+  id: string;
+  name: string;
+}
+
 export function RefinementSummary({ refinement }: { refinement: Refinement }) {
+  const [lineage, setLineage] = useState<LineageNode[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    buildLineage(refinement.parent_job_id, 6)
+      .then((chain) => {
+        if (!cancelled) setLineage(chain);
+      })
+      .catch(() => {
+        if (!cancelled) setLineage([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refinement.parent_job_id]);
+
   return (
-    <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-5 shadow-sm">
-      <div className="mb-3 flex items-baseline justify-between gap-2">
+    <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-5 shadow-sm animate-rise-in">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-indigo-700">
           Refinement
         </h3>
-        <Link
-          to={`/jobs/${refinement.parent_job_id}`}
-          className="text-xs font-medium text-indigo-600 hover:underline"
-        >
-          ← parent job
-        </Link>
+        {lineage && lineage.length > 0 && <LineageBreadcrumb chain={lineage} />}
       </div>
 
       <blockquote className="mb-4 rounded-lg border-l-2 border-indigo-300 bg-white px-3 py-2 text-sm text-slate-700">
@@ -33,6 +51,31 @@ export function RefinementSummary({ refinement }: { refinement: Refinement }) {
         <p className="text-sm text-slate-500">Computing diff…</p>
       )}
     </div>
+  );
+}
+
+function LineageBreadcrumb({ chain }: { chain: LineageNode[] }) {
+  return (
+    <nav aria-label="Refinement lineage" className="text-xs">
+      <ol className="flex flex-wrap items-center gap-1">
+        {chain.map((node, i) => (
+          <li key={node.id} className="flex items-center gap-1">
+            <Link
+              to={`/jobs/${node.id}`}
+              className="rounded px-1.5 py-0.5 font-medium text-indigo-600 hover:bg-indigo-100"
+              title={node.id}
+            >
+              {node.name}
+            </Link>
+            {i < chain.length - 1 && <span className="text-slate-300">›</span>}
+          </li>
+        ))}
+        <li className="flex items-center gap-1">
+          <span className="text-slate-300">›</span>
+          <span className="font-medium text-slate-500">current</span>
+        </li>
+      </ol>
+    </nav>
   );
 }
 
@@ -83,4 +126,24 @@ function Pill({
       {count} {label}
     </span>
   );
+}
+
+async function buildLineage(seedJobId: string, maxDepth: number): Promise<LineageNode[]> {
+  const visited = new Set<string>();
+  const out: LineageNode[] = [];
+  let currentId: string | null = seedJobId;
+  for (let i = 0; i < maxDepth && currentId; i++) {
+    if (visited.has(currentId)) break;
+    visited.add(currentId);
+    let job: Job;
+    try {
+      job = await getJob(currentId);
+    } catch {
+      break;
+    }
+    const name = job.spec?.app?.name ?? "(unnamed)";
+    out.unshift({ id: currentId, name });
+    currentId = job.refinement?.parent_job_id ?? null;
+  }
+  return out;
 }
