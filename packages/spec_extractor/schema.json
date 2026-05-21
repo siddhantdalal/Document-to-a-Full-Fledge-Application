@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spec",
+  "type": "object",
+  "required": ["app", "stack", "entities", "endpoints", "screens"],
+  "additionalProperties": false,
+  "properties": {
+    "app": {
+      "type": "object",
+      "required": ["name", "summary", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string" },
+        "version": { "type": "string" }
+      }
+    },
+    "stack": {
+      "type": "object",
+      "required": ["frontend", "backend", "db"],
+      "additionalProperties": false,
+      "properties": {
+        "frontend": { "type": "string", "enum": ["react-vite-ts"] },
+        "backend": { "type": "string", "enum": ["fastapi"] },
+        "db": { "type": "string", "enum": ["sqlite", "postgres"] }
+      }
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "fields"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "type": {
+                  "type": "string",
+                  "enum": ["string", "integer", "float", "boolean", "datetime", "json"]
+                },
+                "required": { "type": "boolean", "default": true },
+                "unique": { "type": "boolean", "default": false }
+              }
+            }
+          }
+        }
+      }
+    },
+    "auth": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["none", "jwt"] },
+        "roles": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "endpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["method", "path"],
+        "additionalProperties": false,
+        "properties": {
+          "method": { "type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+          "path": { "type": "string" },
+          "auth": { "type": "boolean", "default": false },
+          "summary": { "type": "string" },
+          "request": { "type": ["object", "null"] },
+          "response": { "type": ["object", "null"] }
+        }
+      }
+    },
+    "screens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "route"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "route": { "type": "string" },
+          "auth": { "type": "boolean", "default": false },
+          "components": { "type": "array", "items": { "type": "string" } },
+          "actions": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "integrations": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "non_functional": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "i18n": { "type": "boolean", "default": false },
+        "analytics": { "type": "boolean", "default": false },
+        "tests": { "type": "string", "enum": ["none", "smoke", "full"], "default": "smoke" }
+      }
+    }
+  }
+}
