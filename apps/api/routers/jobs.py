@@ -17,11 +17,24 @@ from fastapi import (
 from fastapi.responses import FileResponse
 
 from packages.ai_providers.anthropic_client import AnthropicClient
+from packages.ai_providers.base import LLMClient
+from packages.ai_providers.openai_client import OpenAIClient
+from packages.doc_parser import DocParseError, parse as parse_doc
 from packages.generator import generate, package_zip
 from packages.generator.template import slugify
 from packages.reconciler import reconcile
 from packages.spec_extractor import extract_spec
 from packages.validator import validate
+
+SUPPORTED_PROVIDERS = ("anthropic", "openai")
+
+
+def _make_client(provider: str, key: str, model: str) -> LLMClient:
+    if provider == "anthropic":
+        return AnthropicClient(api_key=key, model=model)
+    if provider == "openai":
+        return OpenAIClient(api_key=key, model=model)
+    raise ValueError(f"Unsupported provider: {provider}")
 
 router = APIRouter(prefix="/jobs")
 
@@ -88,13 +101,13 @@ def _fail_stage(job: dict[str, Any], name: str, message: str) -> None:
     job["updated_at"] = _now()
 
 
-def _run_pipeline(job_id: str, markdown: str, key: str, model: str) -> None:
+def _run_pipeline(job_id: str, markdown: str, provider: str, key: str, model: str) -> None:
     job = _jobs[job_id]
     job["status"] = "running"
     job["updated_at"] = _now()
     try:
         _start_stage(job, "extract_spec")
-        llm = AnthropicClient(api_key=key, model=model)
+        llm = _make_client(provider, key, model)
         spec = extract_spec(markdown, llm)
         job["spec"] = spec
         _finish_stage(
@@ -171,12 +184,18 @@ async def create_job(
     model: str = Form(...),
     x_provider_key: str = Header(..., alias="X-Provider-Key"),
 ) -> dict[str, Any]:
-    if provider != "anthropic":
+    if provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
-    content = (await doc.read()).decode("utf-8", errors="replace")
+    raw = await doc.read()
+    try:
+        content = parse_doc(raw, doc.filename or "uploaded.md")
+    except DocParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="Document is empty.")
     job_id = uuid4().hex
     _jobs[job_id] = _new_job(job_id)
-    background.add_task(_run_pipeline, job_id, content, x_provider_key, model)
+    background.add_task(_run_pipeline, job_id, content, provider, x_provider_key, model)
     return _public(_jobs[job_id])
 
 

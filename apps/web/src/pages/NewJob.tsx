@@ -4,22 +4,46 @@ import { useNavigate } from "react-router-dom";
 import { FileDrop } from "../components/FileDrop";
 import { createJob } from "../lib/job";
 
-const MODELS = [
-  { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
-  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-  { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
+const PROVIDERS = [
+  { id: "anthropic", label: "Anthropic" },
+  { id: "openai", label: "OpenAI" },
 ];
+
+const MODELS_BY_PROVIDER: Record<string, { id: string; label: string }[]> = {
+  anthropic: [
+    { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
+    { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+    { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
+  ],
+  openai: [
+    { id: "gpt-4o", label: "GPT-4o" },
+    { id: "gpt-4o-mini", label: "GPT-4o mini" },
+    { id: "o1", label: "o1" },
+  ],
+};
+
+const KEY_PLACEHOLDER: Record<string, string> = {
+  anthropic: "sk-ant-...",
+  openai: "sk-...",
+};
 
 export function NewJob() {
   const navigate = useNavigate();
   const [doc, setDoc] = useState<File | null>(null);
   const [provider, setProvider] = useState("anthropic");
-  const [model, setModel] = useState(MODELS[0].id);
+  const [model, setModel] = useState(MODELS_BY_PROVIDER.anthropic[0].id);
   const [key, setKey] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const models = MODELS_BY_PROVIDER[provider] ?? [];
   const canSubmit = !!doc && key.length > 0 && !submitting;
+
+  function changeProvider(next: string) {
+    setProvider(next);
+    const list = MODELS_BY_PROVIDER[next] ?? [];
+    if (list.length > 0) setModel(list[0].id);
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -52,16 +76,20 @@ export function NewJob() {
         onSubmit={onSubmit}
         className="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"
       >
-        <FileDrop value={doc} onChange={setDoc} />
+        <FileDrop value={doc} onChange={setDoc} accept=".md,.markdown,.txt,.pdf,.docx" />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Provider">
             <select
               value={provider}
-              onChange={(e) => setProvider(e.target.value)}
+              onChange={(e) => changeProvider(e.target.value)}
               className={selectClass}
             >
-              <option value="anthropic">Anthropic</option>
+              {PROVIDERS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
             </select>
           </Field>
 
@@ -71,7 +99,7 @@ export function NewJob() {
               onChange={(e) => setModel(e.target.value)}
               className={selectClass}
             >
-              {MODELS.map((m) => (
+              {models.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label}
                 </option>
@@ -88,7 +116,7 @@ export function NewJob() {
             type="password"
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder="sk-ant-..."
+            placeholder={KEY_PLACEHOLDER[provider] ?? "sk-..."}
             autoComplete="off"
             spellCheck={false}
             className={`${selectClass} font-mono`}

@@ -18,12 +18,13 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     def fake_extract(_markdown: str, _llm) -> dict:
         return spec
 
-    class FakeAnthropic:
+    class FakeClient:
         def __init__(self, *_args, **_kwargs) -> None:
             pass
 
     monkeypatch.setattr(jobs_module, "extract_spec", fake_extract)
-    monkeypatch.setattr(jobs_module, "AnthropicClient", FakeAnthropic)
+    monkeypatch.setattr(jobs_module, "AnthropicClient", FakeClient)
+    monkeypatch.setattr(jobs_module, "OpenAIClient", FakeClient)
     jobs_module._jobs.clear()
     return TestClient(app)
 
@@ -112,7 +113,53 @@ def test_unsupported_provider_returns_400(client: TestClient) -> None:
         res = client.post(
             "/jobs",
             files={"doc": ("todo_app.md", fh, "text/markdown")},
-            data={"provider": "openai", "model": "gpt-4"},
+            data={"provider": "gemini", "model": "gemini-2.0"},
             headers={"X-Provider-Key": "test-key"},
         )
+    assert res.status_code == 400
+
+
+def test_pipeline_works_with_openai_provider(client: TestClient) -> None:
+    with open(FIXTURES / "todo_app.md", "rb") as fh:
+        res = client.post(
+            "/jobs",
+            files={"doc": ("todo_app.md", fh, "text/markdown")},
+            data={"provider": "openai", "model": "gpt-4o"},
+            headers={"X-Provider-Key": "sk-test"},
+        )
+    assert res.status_code == 200
+    final = _wait_done(client, res.json()["id"])
+    assert final["status"] == "succeeded"
+
+
+def test_docx_upload_is_parsed_into_pipeline(client: TestClient) -> None:
+    import io as _io
+
+    from docx import Document
+
+    doc = Document()
+    doc.add_heading("Todo App", level=1)
+    doc.add_paragraph("A simple todo app per the docx fixture.")
+    buf = _io.BytesIO()
+    doc.save(buf)
+
+    res = client.post(
+        "/jobs",
+        files={"doc": ("spec.docx", buf.getvalue(),
+                       "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        data={"provider": "anthropic", "model": "claude-opus-4-7"},
+        headers={"X-Provider-Key": "test-key"},
+    )
+    assert res.status_code == 200
+    final = _wait_done(client, res.json()["id"])
+    assert final["status"] == "succeeded"
+
+
+def test_empty_document_returns_400(client: TestClient) -> None:
+    res = client.post(
+        "/jobs",
+        files={"doc": ("blank.md", b"   \n   ", "text/markdown")},
+        data={"provider": "anthropic", "model": "claude-opus-4-7"},
+        headers={"X-Provider-Key": "test-key"},
+    )
     assert res.status_code == 400

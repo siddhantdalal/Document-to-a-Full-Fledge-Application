@@ -64,7 +64,7 @@ export function FileDrop({ value, onChange, accept = ".md,.markdown,.txt" }: Pro
       ) : (
         <div className="space-y-1">
           <p className="font-medium text-slate-700">Drop a requirements document here</p>
-          <p className="text-sm text-slate-500">or click to browse · .md / .txt</p>
+          <p className="text-sm text-slate-500">or click to browse · .md / .txt / .pdf / .docx</p>
         </div>
       )}
     </div>
