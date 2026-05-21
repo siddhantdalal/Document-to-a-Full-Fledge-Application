@@ -1,8 +1,14 @@
+import { Route, Routes } from "react-router-dom";
+import { JobStatus } from "./pages/JobStatus";
+import { NewJob } from "./pages/NewJob";
+
 export function App() {
   return (
-    <main>
-      <h1>Document to a Full-Fledged Application</h1>
-      <p>Upload a requirements document and your provider API key to begin.</p>
-    </main>
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white text-slate-900 antialiased">
+      <Routes>
+        <Route path="/" element={<NewJob />} />
+        <Route path="/jobs/:id" element={<JobStatus />} />
+      </Routes>
+    </div>
   );
 }
