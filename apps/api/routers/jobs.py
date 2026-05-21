@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse
 
 from packages.ai_providers.anthropic_client import AnthropicClient
 from packages.ai_providers.base import LLMClient
+from packages.ai_providers.gemini_client import GeminiClient
 from packages.ai_providers.openai_client import OpenAIClient
 from packages.doc_parser import DocParseError, parse as parse_doc
 from packages.generator import generate, package_zip
@@ -26,7 +27,7 @@ from packages.reconciler import reconcile
 from packages.spec_extractor import extract_spec
 from packages.validator import validate
 
-SUPPORTED_PROVIDERS = ("anthropic", "openai")
+SUPPORTED_PROVIDERS = ("anthropic", "openai", "gemini")
 
 
 def _make_client(provider: str, key: str, model: str) -> LLMClient:
@@ -34,6 +35,8 @@ def _make_client(provider: str, key: str, model: str) -> LLMClient:
         return AnthropicClient(api_key=key, model=model)
     if provider == "openai":
         return OpenAIClient(api_key=key, model=model)
+    if provider == "gemini":
+        return GeminiClient(api_key=key, model=model)
     raise ValueError(f"Unsupported provider: {provider}")
 
 router = APIRouter(prefix="/jobs")
@@ -48,7 +51,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _new_job(job_id: str) -> dict[str, Any]:
+def _new_job(job_id: str, max_tokens: int | None = None) -> dict[str, Any]:
     return {
         "id": job_id,
         "status": "pending",
@@ -65,6 +68,8 @@ def _new_job(job_id: str) -> dict[str, Any]:
         "spec": None,
         "validation": None,
         "reconciliation": None,
+        "usage": {"input": 0, "output": 0, "total": 0},
+        "max_tokens": max_tokens,
         "error": None,
         "artifact_ready": False,
         "artifact_path": None,
@@ -108,15 +113,18 @@ def _run_pipeline(job_id: str, markdown: str, provider: str, key: str, model: st
     try:
         _start_stage(job, "extract_spec")
         llm = _make_client(provider, key, model)
-        spec = extract_spec(markdown, llm)
+        extraction = extract_spec(markdown, llm, max_tokens_budget=job["max_tokens"])
+        spec = extraction.spec
         job["spec"] = spec
+        job["usage"] = extraction.usage
         _finish_stage(
             job,
             "extract_spec",
             (
                 f"{len(spec.get('entities', []))} entities · "
                 f"{len(spec.get('endpoints', []))} endpoints · "
-                f"{len(spec.get('screens', []))} screens"
+                f"{len(spec.get('screens', []))} screens · "
+                f"{extraction.usage['total']} tokens"
             ),
         )
 
@@ -182,10 +190,13 @@ async def create_job(
     doc: UploadFile = File(...),
     provider: str = Form(...),
     model: str = Form(...),
+    max_tokens: int | None = Form(None),
     x_provider_key: str = Header(..., alias="X-Provider-Key"),
 ) -> dict[str, Any]:
     if provider not in SUPPORTED_PROVIDERS:
         raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
+    if max_tokens is not None and max_tokens <= 0:
+        raise HTTPException(status_code=400, detail="max_tokens must be positive.")
     raw = await doc.read()
     try:
         content = parse_doc(raw, doc.filename or "uploaded.md")
@@ -194,7 +205,7 @@ async def create_job(
     if not content.strip():
         raise HTTPException(status_code=400, detail="Document is empty.")
     job_id = uuid4().hex
-    _jobs[job_id] = _new_job(job_id)
+    _jobs[job_id] = _new_job(job_id, max_tokens=max_tokens)
     background.add_task(_run_pipeline, job_id, content, provider, x_provider_key, model)
     return _public(_jobs[job_id])
 

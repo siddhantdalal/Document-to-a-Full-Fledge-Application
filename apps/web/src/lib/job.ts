@@ -7,6 +7,7 @@ export interface CreateJobInput {
   provider: string;
   model: string;
   key: string;
+  maxTokens?: number | null;
 }
 
 export async function createJob(input: CreateJobInput): Promise<Job> {
@@ -14,6 +15,9 @@ export async function createJob(input: CreateJobInput): Promise<Job> {
   fd.append("doc", input.doc);
   fd.append("provider", input.provider);
   fd.append("model", input.model);
+  if (input.maxTokens != null) {
+    fd.append("max_tokens", String(input.maxTokens));
+  }
   const res = await fetch(`${BASE}/jobs`, {
     method: "POST",
     headers: { "X-Provider-Key": input.key },

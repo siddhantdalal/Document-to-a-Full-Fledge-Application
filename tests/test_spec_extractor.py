@@ -11,13 +11,19 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class FakeLLM(LLMClient):
-    def __init__(self, responses: list[str]) -> None:
+    def __init__(self, responses: list[str], usage: tuple[int, int] = (10, 20)) -> None:
         self._responses = list(responses)
+        self._usage = usage
         self.requests: list[CompletionRequest] = []
 
     def complete(self, request: CompletionRequest) -> CompletionResponse:
         self.requests.append(request)
-        return CompletionResponse(content=self._responses.pop(0), raw={})
+        return CompletionResponse(
+            content=self._responses.pop(0),
+            raw={},
+            input_tokens=self._usage[0],
+            output_tokens=self._usage[1],
+        )
 
     def validate_key(self) -> bool:
         return True
@@ -46,17 +52,21 @@ def test_parse_spec_response_rejects_schema_violations():
         parse_spec_response("{}")
 
 
-def test_extract_spec_returns_spec_on_first_try():
+def test_extract_spec_returns_spec_and_usage_on_first_try():
     spec = _todo_spec()
-    llm = FakeLLM([_fenced(spec)])
-    assert extract_spec("doc text", llm) == spec
+    llm = FakeLLM([_fenced(spec)], usage=(40, 60))
+    result = extract_spec("doc text", llm)
+    assert result.spec == spec
+    assert result.usage == {"input": 40, "output": 60, "total": 100}
     assert len(llm.requests) == 1
 
 
 def test_extract_spec_retries_on_invalid_then_succeeds():
     spec = _todo_spec()
-    llm = FakeLLM(["not json", _fenced(spec)])
-    assert extract_spec("doc text", llm) == spec
+    llm = FakeLLM(["not json", _fenced(spec)], usage=(5, 5))
+    result = extract_spec("doc text", llm)
+    assert result.spec == spec
+    assert result.usage["total"] == 20
     assert len(llm.requests) == 2
     feedback = llm.requests[1].messages[-1]
     assert feedback.role == "user"
@@ -67,3 +77,12 @@ def test_extract_spec_raises_after_exhausting_retries():
     llm = FakeLLM(["not json"] * 3)
     with pytest.raises(SpecExtractionError):
         extract_spec("doc text", llm, retries=2)
+
+
+def test_extract_spec_respects_token_budget():
+    spec = _todo_spec()
+    llm = FakeLLM([_fenced(spec)], usage=(60, 50))
+    with pytest.raises(SpecExtractionError) as exc:
+        extract_spec("doc text", llm, max_tokens_budget=100)
+    assert "budget" in str(exc.value).lower()
+    assert "110" in str(exc.value)

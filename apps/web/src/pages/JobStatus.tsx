@@ -80,6 +80,22 @@ export function JobStatus() {
           </h2>
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <StageTimeline stages={job.stages} />
+            {(job.usage.total > 0 || job.max_tokens) && (
+              <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-3 text-xs">
+                <span className="font-medium text-slate-500">Tokens</span>
+                <span className="font-mono text-slate-700">
+                  {job.usage.total.toLocaleString()}
+                  <span className="text-slate-400">
+                    {" "}
+                    ({job.usage.input.toLocaleString()} in /{" "}
+                    {job.usage.output.toLocaleString()} out)
+                  </span>
+                  {job.max_tokens && (
+                    <span className="text-slate-400"> · budget {job.max_tokens.toLocaleString()}</span>
+                  )}
+                </span>
+              </div>
+            )}
           </div>
 
           {job.artifact_ready && (

@@ -15,8 +15,16 @@ FIXTURES = Path(__file__).parent / "fixtures"
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     spec = json.loads((FIXTURES / "todo_app.spec.json").read_text())
 
-    def fake_extract(_markdown: str, _llm) -> dict:
-        return spec
+    from packages.spec_extractor import ExtractionResult
+
+    def fake_extract(_markdown: str, _llm, retries: int = 2, max_tokens_budget=None) -> ExtractionResult:
+        usage = {"input": 1200, "output": 800, "total": 2000}
+        if max_tokens_budget is not None and usage["total"] > max_tokens_budget:
+            from packages.spec_extractor import SpecExtractionError
+            raise SpecExtractionError(
+                f"Token budget {max_tokens_budget} exceeded ({usage['total']} used)."
+            )
+        return ExtractionResult(spec=spec, usage=usage)
 
     class FakeClient:
         def __init__(self, *_args, **_kwargs) -> None:
@@ -25,6 +33,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(jobs_module, "extract_spec", fake_extract)
     monkeypatch.setattr(jobs_module, "AnthropicClient", FakeClient)
     monkeypatch.setattr(jobs_module, "OpenAIClient", FakeClient)
+    monkeypatch.setattr(jobs_module, "GeminiClient", FakeClient)
     jobs_module._jobs.clear()
     return TestClient(app)
 
@@ -84,6 +93,8 @@ def test_pipeline_runs_all_stages_and_serves_zip(client: TestClient) -> None:
 
     assert final["validation"]["ok"] is True
     assert final["validation"]["summary"]["python_files"] > 0
+    assert final["usage"] == {"input": 1200, "output": 800, "total": 2000}
+    assert final["max_tokens"] is None
     rec = final["reconciliation"]
     assert rec["ok"] is True
     assert rec["coverage"]["entities"]["covered"] == rec["coverage"]["entities"]["total"]
@@ -113,7 +124,7 @@ def test_unsupported_provider_returns_400(client: TestClient) -> None:
         res = client.post(
             "/jobs",
             files={"doc": ("todo_app.md", fh, "text/markdown")},
-            data={"provider": "gemini", "model": "gemini-2.0"},
+            data={"provider": "cohere", "model": "command-r"},
             headers={"X-Provider-Key": "test-key"},
         )
     assert res.status_code == 400
@@ -162,4 +173,53 @@ def test_empty_document_returns_400(client: TestClient) -> None:
         data={"provider": "anthropic", "model": "claude-opus-4-7"},
         headers={"X-Provider-Key": "test-key"},
     )
+    assert res.status_code == 400
+
+
+def test_pipeline_works_with_gemini_provider(client: TestClient) -> None:
+    with open(FIXTURES / "todo_app.md", "rb") as fh:
+        res = client.post(
+            "/jobs",
+            files={"doc": ("todo_app.md", fh, "text/markdown")},
+            data={"provider": "gemini", "model": "gemini-2.5-flash"},
+            headers={"X-Provider-Key": "g-test"},
+        )
+    assert res.status_code == 200
+    final = _wait_done(client, res.json()["id"])
+    assert final["status"] == "succeeded"
+
+
+def test_token_budget_aborts_pipeline(client: TestClient) -> None:
+    with open(FIXTURES / "todo_app.md", "rb") as fh:
+        res = client.post(
+            "/jobs",
+            files={"doc": ("todo_app.md", fh, "text/markdown")},
+            data={
+                "provider": "anthropic",
+                "model": "claude-opus-4-7",
+                "max_tokens": "100",
+            },
+            headers={"X-Provider-Key": "test-key"},
+        )
+    assert res.status_code == 200
+    final = _wait_done(client, res.json()["id"])
+    assert final["status"] == "failed"
+    assert final["max_tokens"] == 100
+    assert "budget" in (final["error"] or "").lower()
+    extract_stage = next(s for s in final["stages"] if s["name"] == "extract_spec")
+    assert extract_stage["status"] == "failed"
+
+
+def test_token_budget_must_be_positive(client: TestClient) -> None:
+    with open(FIXTURES / "todo_app.md", "rb") as fh:
+        res = client.post(
+            "/jobs",
+            files={"doc": ("todo_app.md", fh, "text/markdown")},
+            data={
+                "provider": "anthropic",
+                "model": "claude-opus-4-7",
+                "max_tokens": "0",
+            },
+            headers={"X-Provider-Key": "test-key"},
+        )
     assert res.status_code == 400

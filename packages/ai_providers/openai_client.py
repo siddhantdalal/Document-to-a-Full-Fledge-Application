@@ -30,7 +30,14 @@ class OpenAIClient(LLMClient):
             max_tokens=request.max_tokens,
         )
         text = result.choices[0].message.content or ""
-        return CompletionResponse(content=text, raw=result.model_dump())
+        raw = result.model_dump()
+        usage = raw.get("usage") or {}
+        return CompletionResponse(
+            content=text,
+            raw=raw,
+            input_tokens=usage.get("prompt_tokens", 0),
+            output_tokens=usage.get("completion_tokens", 0),
+        )
 
     def validate_key(self) -> bool:
         try:

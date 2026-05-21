@@ -33,7 +33,14 @@ class AnthropicClient(LLMClient):
             ]
         result = self._client.messages.create(**kwargs)
         text = "".join(block.text for block in result.content if block.type == "text")
-        return CompletionResponse(content=text, raw=result.model_dump())
+        raw = result.model_dump()
+        usage = raw.get("usage") or {}
+        return CompletionResponse(
+            content=text,
+            raw=raw,
+            input_tokens=usage.get("input_tokens", 0),
+            output_tokens=usage.get("output_tokens", 0),
+        )
 
     def validate_key(self) -> bool:
         try:

@@ -66,6 +66,12 @@ export interface Reconciliation {
   coverage: Record<string, CoverageBucket>;
 }
 
+export interface Usage {
+  input: number;
+  output: number;
+  total: number;
+}
+
 export interface Job {
   id: string;
   status: JobStatus;
@@ -73,6 +79,8 @@ export interface Job {
   spec: Spec | null;
   validation: Validation | null;
   reconciliation: Reconciliation | null;
+  usage: Usage;
+  max_tokens: number | null;
   error: string | null;
   artifact_ready: boolean;
   created_at: string;

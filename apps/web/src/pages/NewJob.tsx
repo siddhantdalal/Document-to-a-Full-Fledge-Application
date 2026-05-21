@@ -1,12 +1,14 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { FileDrop } from "../components/FileDrop";
 import { createJob } from "../lib/job";
+import { clearKey, loadKey, saveKey } from "../lib/keyStore";
 
 const PROVIDERS = [
   { id: "anthropic", label: "Anthropic" },
   { id: "openai", label: "OpenAI" },
+  { id: "gemini", label: "Google Gemini" },
 ];
 
 const MODELS_BY_PROVIDER: Record<string, { id: string; label: string }[]> = {
@@ -20,12 +22,20 @@ const MODELS_BY_PROVIDER: Record<string, { id: string; label: string }[]> = {
     { id: "gpt-4o-mini", label: "GPT-4o mini" },
     { id: "o1", label: "o1" },
   ],
+  gemini: [
+    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+    { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+  ],
 };
 
 const KEY_PLACEHOLDER: Record<string, string> = {
   anthropic: "sk-ant-...",
   openai: "sk-...",
+  gemini: "AIza...",
 };
+
+const selectClass =
+  "mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200";
 
 export function NewJob() {
   const navigate = useNavigate();
@@ -33,11 +43,30 @@ export function NewJob() {
   const [provider, setProvider] = useState("anthropic");
   const [model, setModel] = useState(MODELS_BY_PROVIDER.anthropic[0].id);
   const [key, setKey] = useState("");
+  const [remember, setRemember] = useState(false);
+  const [maxTokens, setMaxTokens] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const models = MODELS_BY_PROVIDER[provider] ?? [];
   const canSubmit = !!doc && key.length > 0 && !submitting;
+
+  useEffect(() => {
+    let cancelled = false;
+    loadKey()
+      .then((stored) => {
+        if (cancelled || !stored) return;
+        setProvider(stored.provider);
+        const list = MODELS_BY_PROVIDER[stored.provider] ?? [];
+        if (list.length > 0) setModel(list[0].id);
+        setKey(stored.key);
+        setRemember(true);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function changeProvider(next: string) {
     setProvider(next);
@@ -51,7 +80,19 @@ export function NewJob() {
     setSubmitting(true);
     setError(null);
     try {
-      const job = await createJob({ doc, provider, model, key });
+      if (remember) {
+        await saveKey(provider, key);
+      } else {
+        clearKey();
+      }
+      const parsedMax = maxTokens ? Number(maxTokens) : null;
+      const job = await createJob({
+        doc,
+        provider,
+        model,
+        key,
+        maxTokens: parsedMax,
+      });
       navigate(`/jobs/${job.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -110,7 +151,7 @@ export function NewJob() {
 
         <Field
           label="API Key"
-          hint="Sent only to the orchestrator with this request. Never stored."
+          hint="Sent only to the orchestrator with this request. Never logged."
         >
           <input
             type="password"
@@ -122,6 +163,40 @@ export function NewJob() {
             className={`${selectClass} font-mono`}
           />
         </Field>
+
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-200"
+          />
+          <span className="flex-1">
+            <span className="font-medium text-slate-700">Remember key on this device</span>
+            <span className="block text-xs text-slate-500">
+              Stored in your browser only, encrypted with a non-extractable AES-GCM key.
+            </span>
+          </span>
+        </label>
+
+        <details className="group rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium text-slate-700 group-open:mb-3">
+            Advanced
+          </summary>
+          <Field
+            label="Max tokens per job"
+            hint="Optional. Pipeline aborts if total input + output exceeds this."
+          >
+            <input
+              type="number"
+              min={1}
+              value={maxTokens}
+              onChange={(e) => setMaxTokens(e.target.value)}
+              placeholder="unlimited"
+              className={selectClass}
+            />
+          </Field>
+        </details>
 
         {error && (
           <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
@@ -144,9 +219,6 @@ export function NewJob() {
     </div>
   );
 }
-
-const selectClass =
-  "mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200";
 
 function Field({
   label,

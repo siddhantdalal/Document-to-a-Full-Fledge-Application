@@ -26,6 +26,8 @@ class CompletionRequest:
 class CompletionResponse:
     content: str
     raw: dict[str, Any]
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class LLMClient(ABC):
