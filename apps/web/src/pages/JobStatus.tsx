@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { CoverageCard } from "../components/CoverageCard";
+import { PreviewPanel } from "../components/PreviewPanel";
 import { SpecPanel } from "../components/SpecPanel";
 import { StageTimeline } from "../components/StageTimeline";
 import { artifactUrl, getJob } from "../lib/job";
@@ -13,6 +14,7 @@ export function JobStatus() {
   const { id } = useParams<{ id: string }>();
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pulse, setPulse] = useState(0);
 
   useEffect(() => {
     if (!id) return;
@@ -24,7 +26,9 @@ export function JobStatus() {
         const next = await getJob(id!);
         if (cancelled) return;
         setJob(next);
-        if (next.status === "pending" || next.status === "running") {
+        const jobRunning = next.status === "pending" || next.status === "running";
+        const previewStarting = next.preview?.status === "starting";
+        if (jobRunning || previewStarting) {
           timer = window.setTimeout(tick, POLL_MS);
         }
       } catch (err) {
@@ -37,7 +41,7 @@ export function JobStatus() {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [id]);
+  }, [id, pulse]);
 
   if (error) {
     return (
@@ -111,6 +115,17 @@ export function JobStatus() {
           {job.reconciliation && (
             <div className="mt-4">
               <CoverageCard reconciliation={job.reconciliation} />
+            </div>
+          )}
+
+          {job.artifact_ready && (
+            <div className="mt-4">
+              <PreviewPanel
+                jobId={job.id}
+                preview={job.preview}
+                artifactReady={job.artifact_ready}
+                onChange={() => setPulse((p) => p + 1)}
+              />
             </div>
           )}
 

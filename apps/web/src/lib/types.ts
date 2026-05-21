@@ -72,6 +72,16 @@ export interface Usage {
   total: number;
 }
 
+export type PreviewStatus = "starting" | "running" | "failed";
+
+export interface PreviewState {
+  status: PreviewStatus;
+  frontend_url: string | null;
+  backend_url: string | null;
+  started_at: string | null;
+  error: string | null;
+}
+
 export interface Job {
   id: string;
   status: JobStatus;
@@ -81,6 +91,7 @@ export interface Job {
   reconciliation: Reconciliation | null;
   usage: Usage;
   max_tokens: number | null;
+  preview: PreviewState | null;
   error: string | null;
   artifact_ready: boolean;
   created_at: string;

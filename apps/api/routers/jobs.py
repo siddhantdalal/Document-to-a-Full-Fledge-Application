@@ -70,12 +70,17 @@ def _new_job(job_id: str, max_tokens: int | None = None) -> dict[str, Any]:
         "reconciliation": None,
         "usage": {"input": 0, "output": 0, "total": 0},
         "max_tokens": max_tokens,
+        "preview": None,
         "error": None,
         "artifact_ready": False,
         "artifact_path": None,
         "created_at": _now(),
         "updated_at": _now(),
     }
+
+
+def project_dir_for(job_id: str) -> Path:
+    return _ARTIFACT_ROOT / job_id / "project"
 
 
 def _stage(job: dict[str, Any], name: str) -> dict[str, Any]:
