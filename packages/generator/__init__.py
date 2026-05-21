@@ -2,6 +2,8 @@ import json
 import shutil
 from pathlib import Path
 
+from packages.generator.backend import write_backend
+from packages.generator.frontend import write_frontend
 from packages.generator.template import (
     DEFAULT_TEMPLATE_ROOT,
     PlaceholderReplacements,
@@ -28,6 +30,8 @@ def generate(
     }
 
     copy_template(template_root / "react-fastapi", output_dir, replacements)
+    write_backend(spec, output_dir)
+    write_frontend(spec, output_dir)
     (output_dir / "spec.json").write_text(json.dumps(spec, indent=2))
     return output_dir
 
